@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HYDRA Web</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap">
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f0f2f5;
+            --bg-sidebar: #ffffff;
+            --header-bg: #f0f2f5;
+            --accent-color: #00a884;
+            --accent-hover: #008f6f;
+            --text-primary: #111b21;
+            --text-secondary: #667781;
+            --incoming-bg: #ffffff;
+            --outgoing-bg: #d9fdd3;
+            --border-color: #e9edef;
+            --hover-color: #f5f6f6;
+            --danger-color: #ea4335;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #d1d7db;
+            height: 100vh;
+            overflow: hidden;
+            color: var(--text-primary);
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            max-width: 1600px;
+            margin: 0 auto;
+            background: var(--bg-primary);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        /* --- Sidebar --- */
+        .sidebar {
+            width: 30%;
+            min-width: 320px;
+            max-width: 450px;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-sidebar);
+            position: relative;
+            z-index: 2;
+        }
+
+        .sidebar-header {
+            padding: 10px 16px;
+            background: var(--header-bg);
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            box-sizing: border-box;
+        }
+
+        .user-profile-trigger {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .user-profile-trigger:hover {
+            background: rgba(0,0,0,0.05);
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: #dfe1e5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: white;
+            font-size: 16px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            color: #54656f;
+            font-size: 20px;
+            transition: background 0.2s;
+        }
+
+        .icon-btn:hover {
+            background-color: rgba(0,0,0,0.1);
+            color: var(--text-primary);
+        }
+
+        .search-bar {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-sidebar);
+        }
+
+        .search-input-wrapper {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-input {
+            width: 100%;
+            border: none;
+            background: none;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .contacts-list {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: background-color 0.2s;
+        }
+
+        .contact-item:hover {
+            background-color: var(--hover-color);
+        }
+
+        .contact-item.active {
+            background-color: #f0f2f5;
+        }
+
+        .contact-info {
+            margin-left: 15px;
+            flex-grow: 1;
+        }
+
+        .contact-name {
+            font-weight: 500;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .contact-status {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* --- Chat Area --- */
+        .chat-area {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%23d1d7db' fill-opacity='0.4' fill-rule='evenodd'/%3E%3C/svg%3E");
+            background-color: #efeae2;
+            position: relative;
+        }
+
+        .chat-header {
+            padding: 10px 16px;
+            background: var(--header-bg);
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            box-sizing: border-box;
+            z-index: 10;
+        }
+
+        .messages-container {
+            flex-grow: 1;
+            padding: 20px 5%;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .message {
+            max-width: 65%;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 14.2px;
+            line-height: 19px;
+            position: relative;
+            box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+            word-wrap: break-word;
+            margin-bottom: 4px;
+        }
+
+        .message.incoming {
+            align-self: flex-start;
+            background: var(--incoming-bg);
+            border-radius: 0 8px 8px 8px;
+        }
+
+        .message.outgoing {
+            align-self: flex-end;
+            background: var(--outgoing-bg);
+            border-radius: 8px 0 8px 8px;
+        }
+        
+        .message-time {
+            font-size: 11px;
+            color: var(--text-secondary);
+            float: right;
+            margin-left: 8px;
+            margin-top: 4px;
+        }
+
+        .input-area {
+            background: var(--bg-sidebar);
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .input-box {
+            flex-grow: 1;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 9px 12px;
+        }
+
+        .input-box input {
+            width: 100%;
+            border: none;
+            background: none;
+            outline: none;
+            font-size: 15px;
+        }
+
+        .welcome-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            border-bottom: 6px solid var(--accent-color);
+        }
+
+        /* --- Modals --- */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: var(--text-primary);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 15px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: var(--accent-color);
+            outline: none;
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: #e9edef;
+            color: var(--text-primary);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+
+        .btn-danger {
+            background: transparent;
+            color: var(--danger-color);
+            border: 1px solid var(--danger-color);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        /* Voice Recording */
+        .voice-recording-ui {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            color: var(--danger-color);
+            flex-grow: 1;
+        }
+        
+        .recording-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--danger-color);
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="user-profile-trigger" onclick="openProfileEditor()">
+                    <div class="avatar" id="myAvatar">?</div>
+                    <span style="font-weight: 500;" id="myName">Loading...</span>
+                </div>
+                <div>
+                    <button class="icon-btn" onclick="openAddContactModal()" title="Новый чат">➕</button>
+                    <button class="icon-btn" title="Меню">⋮</button>
+                </div>
+            </div>
+
+            <div class="search-bar">
+                <div class="search-input-wrapper">
+                    <span>🔍</span>
+                    <input type="text" class="search-input" placeholder="Поиск или новый чат">
+                </div>
+            </div>
+
+            <div class="contacts-list" id="contactsList">
+                <!-- Contacts rendered via JS -->
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <!-- Welcome Screen -->
+            <div id="welcomeScreen" class="welcome-screen">
+                <div style="font-size: 48px; margin-bottom: 20px;">🐋</div>
+                <h1 style="margin: 0; font-weight: 300; color: #41525d;">Hydra Web</h1>
+                <p style="margin-top: 10px; font-size: 14px;">Отправляйте и получайте сообщения без лишних глаз.</p>
+                <div style="margin-top: 20px; font-size: 12px; color: #8696a0;">
+                    <span id="networkStatus">🔒 End-to-end encrypted connection</span>
+                </div>
+            </div>
+
+            <!-- Active Chat -->
+            <div id="chatInterface" style="display: none; flex-direction: column; height: 100%;">
+                <header class="chat-header">
+                    <div style="display: flex; align-items: center; gap: 15px; cursor: pointer;">
+                        <div class="avatar" id="currentContactAvatar"></div>
+                        <div>
+                            <div class="contact-name" id="currentContactName">Name</div>
+                            <div class="contact-status" id="currentContactStatus">online</div>
+                        </div>
+                    </div>
+                    <div>
+                        <button class="icon-btn" onclick="startCall()">📞</button>
+                        <button class="icon-btn">🔍</button>
+                    </div>
+                </header>
+
+                <div class="messages-container" id="messagesContainer"></div>
+
+                <div class="input-area">
+                    <button class="icon-btn">📎</button>
+                    <div class="input-box" id="textInputContainer">
+                        <input type="text" id="messageInput" placeholder="Введите сообщение" onkeypress="handleKeyPress(event)">
+                    </div>
+
+                    <div class="voice-recording-ui" id="voiceRecordingUI">
+                        <div class="recording-dot"></div>
+                        <span id="recordingTime">00:00</span>
+                        <span style="flex-grow: 1"></span>
+                        <button class="icon-btn" onclick="cancelVoiceRecording()" style="color: var(--danger-color)">🗑️</button>
+                    </div>
+
+                    <button class="icon-btn" id="micBtn" onmousedown="startRecording()" onmouseup="stopRecording()">🎤</button>
+                    <button class="icon-btn" id="sendBtn" onclick="sendMessage()" style="display: none; color: var(--accent-color);">➤</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Profile Editor Modal -->
+    <div id="profileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Редактирование профиля</h2>
+                <button class="icon-btn" onclick="closeProfileEditor()">✕</button>
+            </div>
+            <div class="form-group">
+                <label>Имя</label>
+                <input type="text" id="editName">
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="editEmail">
+            </div>
+            <div class="form-group">
+                <label>Телефон</label>
+                <input type="tel" id="editPhone">
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 24px;">
+                <button class="btn-danger" onclick="logout()">Выйти из аккаунта</button>
+                <button class="btn-primary" onclick="saveProfile()">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Contact Modal -->
+    <div id="addContactModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Новый контакт</h2>
+                <button class="icon-btn" onclick="closeAddContactModal()">✕</button>
+            </div>
+            <div class="form-group">
+                <label>Имя</label>
+                <input type="text" id="newContactName">
+            </div>
+            <div class="form-group">
+                <label>ID (опционально)</label>
+                <input type="text" id="newContactId">
+            </div>
+            <div style="text-align: right; margin-top: 20px;">
+                <button class="btn-secondary" onclick="closeAddContactModal()">Отмена</button>
+                <button class="btn-primary" onclick="addContact()">Создать</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- State ---
+        let currentUser = null;
+        let contacts = [];
+        let selectedContact = null;
+        let chats = {};
+        let mediaRecorder = null;
+        let audioChunks = [];
+
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+            loadContacts();
+            
+            // Input Listener
+            document.getElementById('messageInput').addEventListener('input', toggleSendMicButton);
+        });
+
+        function checkAuth() {
+            const userStr = localStorage.getItem('currentUser');
+            if (!userStr) {
+                window.location.href = '/login.html';
+                return;
+            }
+            currentUser = JSON.parse(userStr);
+            updateProfileUI();
+        }
+
+        function updateProfileUI() {
+            if (!currentUser) return;
+            document.getElementById('myName').textContent = currentUser.name;
+            document.getElementById('myAvatar').textContent = currentUser.name.charAt(0).toUpperCase();
+        }
+
+        // --- Profile Editor ---
+        function openProfileEditor() {
+            document.getElementById('editName').value = currentUser.name;
+            document.getElementById('editEmail').value = currentUser.email || '';
+            document.getElementById('editPhone').value = currentUser.phone || '';
+            document.getElementById('profileModal').classList.add('active');
+        }
+
+        function closeProfileEditor() {
+            document.getElementById('profileModal').classList.remove('active');
+        }
+
+        async function saveProfile() {
+            const updatedUser = {
+                ...currentUser,
+                name: document.getElementById('editName').value,
+                email: document.getElementById('editEmail').value,
+                phone: document.getElementById('editPhone').value
+            };
+
+            try {
+                const res = await fetch(`/api/users/${currentUser.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatedUser)
+                });
+                
+                const data = await res.json();
+                if (data.success) {
+                    currentUser = updatedUser;
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    updateProfileUI();
+                    closeProfileEditor();
+                } else {
+                    alert('Ошибка сохранения: ' + data.error);
+                }
+            } catch (e) {
+                alert('Ошибка сети');
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('currentUser');
+            window.location.href = '/login.html';
+        }
+
+        // --- Contacts & Chat ---
+        async function loadContacts() {
+            try {
+                const res = await fetch('/api/contacts');
+                const data = await res.json();
+                if (data.success) {
+                    contacts = data.contacts;
+                    renderContacts();
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function renderContacts() {
+            const list = document.getElementById('contactsList');
+            list.innerHTML = '';
+            
+            contacts.forEach(contact => {
+                const el = document.createElement('div');
+                el.className = `contact-item ${selectedContact && selectedContact.id === contact.id ? 'active' : ''}`;
+                el.onclick = () => selectContact(contact);
+                
+                el.innerHTML = `
+                    <div class="avatar" style="background-color: ${contact.avatar || '#ccc'}">
+                        ${contact.name.charAt(0)}
+                    </div>
+                    <div class="contact-info">
+                        <div class="contact-name">${contact.name}</div>
+                        <div class="contact-status">${contact.status}</div>
+                    </div>
+                `;
+                list.appendChild(el);
+            });
+        }
+
+        function selectContact(contact) {
+            selectedContact = contact;
+            document.getElementById('welcomeScreen').style.display = 'none';
+            document.getElementById('chatInterface').style.display = 'flex';
+            
+            document.getElementById('currentContactName').textContent = contact.name;
+            document.getElementById('currentContactStatus').textContent = contact.status;
+            document.getElementById('currentContactAvatar').textContent = contact.name.charAt(0);
+            document.getElementById('currentContactAvatar').style.backgroundColor = contact.avatar || '#ccc';
+            
+            renderContacts();
+            renderMessages();
+        }
+
+        // --- Messaging ---
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') sendMessage();
+        }
+
+        function toggleSendMicButton() {
+            const input = document.getElementById('messageInput');
+            const micBtn = document.getElementById('micBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            
+            if (input.value.trim().length > 0) {
+                micBtn.style.display = 'none';
+                sendBtn.style.display = 'block';
+            } else {
+                micBtn.style.display = 'block';
+                sendBtn.style.display = 'none';
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text || !selectedContact) return;
+
+            // Optimistic UI
+            addMessageToChat(selectedContact.id, {
+                text,
+                isIncoming: false,
+                type: 'text',
+                time: new Date()
+            });
+            
+            input.value = '';
+            toggleSendMicButton();
+
+            try {
+                await fetch('/api/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        to: selectedContact.id,
+                        message: text
+                    })
+                });
+            } catch (e) {
+                console.error('Send failed', e);
+            }
+        }
+
+        function addMessageToChat(contactId, msg) {
+            if (!chats[contactId]) chats[contactId] = [];
+            chats[contactId].push(msg);
+            if (selectedContact && selectedContact.id === contactId) {
+                renderMessages();
+            }
+        }
+
+        function renderMessages() {
+            const container = document.getElementById('messagesContainer');
+            container.innerHTML = '';
+            
+            const messages = chats[selectedContact.id] || [];
+            messages.forEach(msg => {
+                const el = document.createElement('div');
+                el.className = `message ${msg.isIncoming ? 'incoming' : 'outgoing'}`;
+                
+                const timeStr = new Date(msg.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
+                if (msg.type === 'text') {
+                    el.innerHTML = `${msg.text} <div class="message-time">${timeStr}</div>`;
+                }
+                container.appendChild(el);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // --- Modals Helper ---
+        function openAddContactModal() {
+            document.getElementById('addContactModal').classList.add('active');
+        }
+        function closeAddContactModal() {
+            document.getElementById('addContactModal').classList.remove('active');
+        }
+        
+        async function addContact() {
+            const name = document.getElementById('newContactName').value;
+            const id = document.getElementById('newContactId').value;
+            
+            if(!name) return;
+            
+            try {
+                const res = await fetch('/api/contacts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, id })
+                });
+                const data = await res.json();
+                if(data.success) {
+                    closeAddContactModal();
+                    loadContacts();
+                }
+            } catch(e) { console.error(e); }
+        }
+    </script>
+</body>
+</html>

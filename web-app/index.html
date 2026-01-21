@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hydra Messenger</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #008069 0%, #005a46 100%);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #008069;
+            padding: 16px;
+            color: white;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: #005a46;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .header-info {
+            flex: 1;
+        }
+
+        .contact-name {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .status {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .messages-container {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            background: #e5ddd5;
+            background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%23008069' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E");
+        }
+
+        .message {
+            margin-bottom: 8px;
+            display: flex;
+        }
+
+        .message.my-message {
+            justify-content: flex-end;
+        }
+
+        .message.their-message {
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px;
+            border-radius: 18px;
+            margin-bottom: 4px;
+        }
+
+        .my-bubble {
+            background: #dcf8c6;
+            border-top-right-radius: 4px;
+        }
+
+        .their-bubble {
+            background: white;
+            border-top-left-radius: 4px;
+        }
+
+        .message-text {
+            font-size: 16px;
+            color: #000;
+            margin-bottom: 4px;
+        }
+
+        .timestamp {
+            font-size: 12px;
+            color: #666;
+            text-align: right;
+        }
+
+        .input-container {
+            background: white;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            border-top: 1px solid #ddd;
+        }
+
+        .text-input {
+            flex: 1;
+            background: #f0f0f0;
+            border-radius: 20px;
+            padding: 12px 16px;
+            border: none;
+            font-size: 16px;
+            margin: 0 8px;
+            max-height: 100px;
+            resize: none;
+        }
+
+        .text-input:focus {
+            outline: none;
+        }
+
+        .send-button {
+            background: #008069;
+            border: none;
+            border-radius: 20px;
+            padding: 12px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            min-width: 40px;
+            text-align: center;
+        }
+
+        .send-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .attachment-button {
+            padding: 8px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="avatar">H</div>
+        <div class="header-info">
+            <div class="contact-name">Hydra Support</div>
+            <div class="status">Online</div>
+        </div>
+        <div class="header-button">⋮</div>
+    </div>
+
+    <div class="messages-container" id="messagesContainer">
+        <div class="message their-message">
+            <div class="message-bubble their-bubble">
+                <div class="message-text">Привет! Добро пожаловать в Hydra Messenger</div>
+                <div class="timestamp">12:00</div>
+            </div>
+        </div>
+        <div class="message their-message">
+            <div class="message-bubble their-bubble">
+                <div class="message-text">Это безопасный мессенджер с Domain Fronting</div>
+                <div class="timestamp">12:01</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="input-container">
+        <div class="attachment-button">📎</div>
+        <textarea 
+            class="text-input" 
+            id="messageInput" 
+            placeholder="Сообщение"
+            rows="1"
+            oninput="autoResize(this)"
+        ></textarea>
+        <button class="send-button" id="sendButton" onclick="sendMessage()">➤</button>
+    </div>
+
+    <script>
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
+            sendButton.disabled = !textarea.value.trim();
+        }
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            // Add message to UI
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message my-message';
+            messageElement.innerHTML = `
+                <div class="message-bubble my-bubble">
+                    <div class="message-text">${text}</div>
+                    <div class="timestamp">${new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>
+                </div>
+            `;
+            messagesContainer.appendChild(messageElement);
+
+            // Clear input
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            sendButton.disabled = true;
+
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            // Here would be the call to our transport layer
+            console.log('Sending message via Domain Fronting:', text);
+        }
+
+        // Enable sending with Enter key (but allow Shift+Enter for new line)
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Initial scroll to bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    </script>
+</body>
+</html>

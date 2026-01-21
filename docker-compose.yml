@@ -1,0 +1,13 @@
+services:
+  hydra:
+    build: .
+    container_name: hydra-server
+    restart: unless-stopped
+    ports:
+      - "8081:8081" # Web Interface
+      - "8080:8080" # Mesh Transport
+    volumes:
+      - ./hydra.db:/app/hydra.db
+      - ./voice_storage:/app/voice_storage
+    environment:
+      - GO_ENV=production
