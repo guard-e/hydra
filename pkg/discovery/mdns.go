@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
@@ -91,14 +90,14 @@ func (sd *ServiceDiscovery) advertiseService(ip string) error {
 
 	// Сервер будет работать в фоне
 	defer server.Shutdown()
-	
+
 	return nil
 }
 
 // discoverServices ищет другие сервисы в сети
 func (sd *ServiceDiscovery) discoverServices() {
 	entries := make(chan *mdns.ServiceEntry)
-	
+
 	// Параметры поиска
 	params := mdns.QueryParam{
 		Service:             sd.serviceName,
@@ -118,21 +117,20 @@ func (sd *ServiceDiscovery) discoverServices() {
 			return
 		case <-ticker.C:
 			go func() {
-				if err := mdns.Query(¶ms); err != nil {
+				if err := mdns.Query(&params); err != nil {
 					log.Printf("mDNS query error: %v", err)
 				}
 			}()
-			
-			case entry := <-entries:
-				if entry.AddrV4 != nil {
-					peerAddr := fmt.Sprintf("%s:%d", entry.AddrV4.String(), entry.Port)
-					
-					sd.mu.Lock()
-					sd.peers[entry.Name] = peerAddr
-					sd.mu.Unlock()
-					
-					log.Printf("Discovered peer: %s (%s)", entry.Name, peerAddr)
-				}
+		case entry := <-entries:
+			if entry.AddrV4 != nil {
+				peerAddr := fmt.Sprintf("%s:%d", entry.AddrV4.String(), entry.Port)
+
+				sd.mu.Lock()
+				sd.peers[entry.Name] = peerAddr
+				sd.mu.Unlock()
+
+				log.Printf("Discovered peer: %s (%s)", entry.Name, peerAddr)
+			}
 		}
 	}
 }
@@ -143,7 +141,7 @@ func getLocalIP() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	for _, addr := range addrs {
 		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
@@ -151,6 +149,6 @@ func getLocalIP() (string, error) {
 			}
 		}
 	}
-	
+
 	return "", fmt.Errorf("no local IP found")
 }

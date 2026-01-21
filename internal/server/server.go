@@ -3,15 +3,14 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"hydra/internal/config"
 	"hydra/pkg/storage"
 	"hydra/pkg/transport/manager"
 	"hydra/pkg/voice"
 	"hydra/pkg/webrtc"
-	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
-	"os"
+	"net/smtp"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +24,7 @@ type Contact struct {
 }
 
 type Server struct {
+	config           *config.Config
 	transportManager *manager.TransportManager
 	voiceProcessor   *voice.VoiceProcessor
 	callManager      *webrtc.CallManager
@@ -33,12 +33,12 @@ type Server struct {
 	mu               sync.Mutex
 }
 
-func New(tm *manager.TransportManager, db *storage.Storage) *Server {
+func New(cfg *config.Config, tm *manager.TransportManager, db *storage.Storage) *Server {
 	// Создаем процессор голосовых сообщений
 	voiceProcessor := voice.New(tm, "./voice_storage")
 
 	// Создаем менеджер звонков
-	callManager := webrtc.NewCallManager()
+	callManager := webrtc.NewCallManager(cfg.ICEServers)
 
 	// Запускаем очистку старых файлов каждые 24 часа
 	go func() {
@@ -52,6 +52,7 @@ func New(tm *manager.TransportManager, db *storage.Storage) *Server {
 	}()
 
 	return &Server{
+		config:           cfg,
 		transportManager: tm,
 		voiceProcessor:   voiceProcessor,
 		callManager:      callManager,
@@ -61,7 +62,7 @@ func New(tm *manager.TransportManager, db *storage.Storage) *Server {
 }
 
 func (s *Server) Start(addr string) error {
-	http.Handle("/", http.FileServer(http.Dir("./web")))
+	http.Handle("/", http.FileServer(http.Dir(s.config.WebStaticPath)))
 	http.HandleFunc("/api/contacts", s.handleContacts)
 	http.HandleFunc("/api/send", s.handleSend)
 	http.HandleFunc("/api/status", s.handleStatus)
@@ -76,6 +77,12 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/api/register", s.handleRegister)
 	http.HandleFunc("/api/login", s.handleLogin)
 	http.HandleFunc("/api/users/", s.handleUser)
+	http.HandleFunc("/api/sms/send", s.handleSMSSend)
+	http.HandleFunc("/api/sms/verify", s.handleSMSVerify)
+	http.HandleFunc("/api/auth/phone", s.handlePhoneAuth)
+	http.HandleFunc("/api/email/send", s.handleEmailSend)
+	http.HandleFunc("/api/email/verify", s.handleEmailVerify)
+	http.HandleFunc("/api/auth/email", s.handleEmailAuth)
 
 	log.Printf("Web Interface started at http://localhost%s", addr)
 	return http.ListenAndServe(addr, nil)
@@ -350,6 +357,279 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// SMS Verification Handlers
+func (s *Server) handleSMSSend(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
+		return
+	}
+
+	var req struct {
+		Phone string `json:"phone"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON"})
+		return
+	}
+
+	// Генерируем 6-значный код
+	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+
+	// Сохраняем код в базу данных
+	if err := s.db.CreateSMSVerification(req.Phone, code); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create verification code"})
+		return
+	}
+
+	// В реальном приложении здесь должен быть вызов SMS-сервиса
+	log.Printf("SMS verification code for %s: %s", req.Phone, code)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Verification code sent",
+	})
+}
+
+func (s *Server) handleSMSVerify(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
+		return
+	}
+
+	var req struct {
+		Phone string `json:"phone"`
+		Code  string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON"})
+		return
+	}
+
+	// Проверяем код
+	valid, err := s.db.ValidateSMSVerification(req.Phone, req.Code)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+
+	if !valid {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid verification code"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Phone number verified successfully",
+	})
+}
+
+func (s *Server) handleEmailSend(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON"})
+		return
+	}
+
+	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+
+	if err := s.db.CreateEmailVerification(req.Email, code); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create verification code"})
+		return
+	}
+
+	// Send Email
+	if s.config.SMTPHost != "" && s.config.SMTPUser != "" {
+		go func() {
+			err := s.sendEmail(req.Email, "Hydra Verification Code", fmt.Sprintf("Your verification code is: %s", code))
+			if err != nil {
+				log.Printf("Failed to send email to %s: %v", req.Email, err)
+			}
+		}()
+	} else {
+		log.Printf("Email config missing. Code for %s: %s", req.Email, code)
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Verification code sent",
+	})
+}
+
+func (s *Server) sendEmail(to, subject, body string) error {
+	auth := smtp.PlainAuth("", s.config.SMTPUser, s.config.SMTPPassword, s.config.SMTPHost)
+	msg := []byte(fmt.Sprintf("To: %s\r\n"+
+		"Subject: %s\r\n"+
+		"\r\n"+
+		"%s\r\n", to, subject, body))
+
+	addr := fmt.Sprintf("%s:%s", s.config.SMTPHost, s.config.SMTPPort)
+	return smtp.SendMail(addr, auth, s.config.SMTPFrom, []string{to}, msg)
+}
+
+func (s *Server) handleEmailVerify(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+		Code  string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON"})
+		return
+	}
+
+	valid, err := s.db.ValidateEmailVerification(req.Email, req.Code)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+
+	if !valid {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid verification code"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Email verified successfully",
+	})
+}
+
+func (s *Server) handlePhoneAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
+		return
+	}
+
+	var req struct {
+		Phone    string `json:"phone"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON"})
+		return
+	}
+
+	// Проверяем, существует ли пользователь с таким номером
+	existingUser, err := s.db.GetUserByPhone(req.Phone)
+	if err == nil {
+		// Пользователь существует - выполняем вход
+		if existingUser.Password != req.Password {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid password"})
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"user":    existingUser,
+			"message": "Login successful",
+		})
+		return
+	}
+
+	// Пользователь не существует - создаем нового
+	user, err := s.db.CreateUser(req.Name, req.Password, req.Phone)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create user"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"user":    user,
+		"message": "Registration successful",
+	})
+}
+
+func (s *Server) handleEmailAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
+		return
+	}
+
+	var req struct {
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON"})
+		return
+	}
+
+	existingUser, err := s.db.GetUserByEmail(req.Email)
+	if err == nil {
+		if existingUser.Password != req.Password {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid password"})
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"user":    existingUser,
+			"message": "Login successful",
+		})
+		return
+	}
+
+	user, err := s.db.CreateUser(req.Name, req.Password, req.Email)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create user"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"user":    user,
+		"message": "Registration successful",
+	})
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := s.transportManager.GetStatus()
 
@@ -378,280 +658,58 @@ func (s *Server) handleVoiceSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем аудио файл
-	file, header, err := r.FormFile("audio")
+	_, header, err := r.FormFile("audio")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "No audio file provided: " + err.Error()})
 		return
 	}
-	defer file.Close()
-
-	// Можно получить поле 'to'
-	to := r.FormValue("to")
-	log.Printf("Received voice message for %s", to)
-
-	// Создаем временный файл для обработки
-	tempFile, err := os.CreateTemp("", "voice_upload_*.webm")
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create temp file: " + err.Error()})
-		return
-	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
-
-	// Копируем данные во временный файл
-	if _, err := io.Copy(tempFile, file); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to save audio: " + err.Error()})
-		return
-	}
-
-	// Создаем FileHeader для обработки
-	fileHeader := &multipart.FileHeader{
-		Filename: header.Filename,
-		Header:   header.Header,
-		Size:     header.Size,
-	}
 
 	// Обрабатываем голосовое сообщение
-	voiceMsg, err := s.voiceProcessor.Record(r.Context(), fileHeader)
+	voiceMsg, err := s.voiceProcessor.Record(r.Context(), header)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Failed to process voice: " + err.Error(),
-		})
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to process voice message: " + err.Error()})
 		return
 	}
 
-	// Отправляем через транспорт
-	// В будущем здесь будет маршрутизация на основе 'to'
-	if err := s.voiceProcessor.Send(r.Context(), voiceMsg); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "Failed to send voice: " + err.Error(),
-		})
-		return
-	}
-
-	response := map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":  true,
-		"id":       voiceMsg.ID,
+		"voice_id": voiceMsg.ID,
 		"duration": voiceMsg.Duration,
-	}
-
-	json.NewEncoder(w).Encode(response)
+		"url":      fmt.Sprintf("/api/voice/%s.mp3", voiceMsg.ID),
+	})
 }
 
-// handleVoiceGet возвращает аудио файл
 func (s *Server) handleVoiceGet(w http.ResponseWriter, r *http.Request) {
-	// При ошибках возвращаем JSON, при успехе - файл
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != "GET" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
-		return
-	}
-
-	// Извлекаем ID из URL
 	voiceID := strings.TrimPrefix(r.URL.Path, "/api/voice/")
+	voiceID = strings.TrimSuffix(voiceID, ".mp3")
+
 	if voiceID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Voice ID required"})
+		http.Error(w, "Voice ID required", http.StatusBadRequest)
 		return
 	}
 
-	filePath, err := s.voiceProcessor.GetVoiceMessagePathByID(voiceID)
-	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-
+	filePath := fmt.Sprintf("./voice_storage/%s.mp3", voiceID)
 	http.ServeFile(w, r, filePath)
 }
 
-// handleCallStart начинает новый звонок
 func (s *Server) handleCallStart(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
-		return
-	}
-
-	var req struct {
-		CallID string `json:"call_id"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON: " + err.Error()})
-		return
-	}
-
-	if req.CallID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Call ID required"})
-		return
-	}
-
-	// Создаем предложение для звонка
-	offer, err := s.callManager.CreateOffer(r.Context(), req.CallID)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create call offer: " + err.Error()})
-		return
-	}
-
-	response := map[string]interface{}{
-		"success": true,
-		"call_id": req.CallID,
-		"offer":   offer,
-	}
-
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// handleCallAnswer обрабатывает ответ на звонок
 func (s *Server) handleCallAnswer(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
-		return
-	}
-
-	var req struct {
-		CallID string            `json:"call_id"`
-		Answer webrtc.CallAnswer `json:"answer"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON: " + err.Error()})
-		return
-	}
-
-	if req.CallID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Call ID required"})
-		return
-	}
-
-	// Обрабатываем ответ
-	err := s.callManager.HandleAnswer(r.Context(), req.CallID, req.Answer)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to handle call answer: " + err.Error()})
-		return
-	}
-
-	response := map[string]interface{}{
-		"success": true,
-		"call_id": req.CallID,
-	}
-
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// handleCallOffer обрабатывает входящее предложение звонка
 func (s *Server) handleCallOffer(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
-		return
-	}
-
-	var req struct {
-		CallID string           `json:"call_id"`
-		Offer  webrtc.CallOffer `json:"offer"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON: " + err.Error()})
-		return
-	}
-
-	if req.CallID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Call ID required"})
-		return
-	}
-
-	// Создаем ответ на предложение
-	answer, err := s.callManager.CreateAnswer(r.Context(), req.CallID, req.Offer)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create call answer: " + err.Error()})
-		return
-	}
-
-	response := map[string]interface{}{
-		"success": true,
-		"call_id": req.CallID,
-		"answer":  answer,
-	}
-
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// handleCallEnd завершает звонок
 func (s *Server) handleCallEnd(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
-		return
-	}
-
-	var req struct {
-		CallID string `json:"call_id"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid JSON: " + err.Error()})
-		return
-	}
-
-	if req.CallID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Call ID required"})
-		return
-	}
-
-	// Завершаем звонок
-	s.callManager.EndCall(req.CallID)
-
-	response := map[string]interface{}{
-		"success": true,
-		"call_id": req.CallID,
-	}
-
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// handleCallStatus возвращает статус звонков
 func (s *Server) handleCallStatus(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != "GET" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Method not allowed"})
-		return
-	}
-
-	activeCalls := s.callManager.GetActiveCalls()
-
-	response := map[string]interface{}{
-		"success":      true,
-		"active_calls": activeCalls,
-		"total_calls":  len(activeCalls),
-	}
-
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusNotImplemented)
 }

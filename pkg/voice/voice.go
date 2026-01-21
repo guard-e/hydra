@@ -119,7 +119,7 @@ func (vp *VoiceProcessor) Receive(ctx context.Context, data []byte) (*VoiceMessa
 	var message struct {
 		Type      string    `json:"type"`
 		ID        string    `json:"id"`
-		UserID    string    `json:ser_id"`
+		UserID    string    `json:"user_id"`
 		Timestamp time.Time `json:"timestamp"`
 		Duration  float64   `json:"duration"`
 		Format    string    `json:"format"`

@@ -1,13 +1,34 @@
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: hydra-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hydra
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
   hydra:
     build: .
     container_name: hydra-server
     restart: unless-stopped
+    depends_on:
+      - db
     ports:
-      - "8081:8081" # Web Interface
+      - "${SERVER_PORT:-8081}:8081" # Web Interface
       - "8080:8080" # Mesh Transport
     volumes:
-      - ./hydra.db:/app/hydra.db
       - ./voice_storage:/app/voice_storage
+    env_file:
+      - .env
     environment:
       - GO_ENV=production
+      # Если DATABASE_URL не задан в .env, используем дефолт для Docker сети
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/hydra?sslmode=disable}
+
+volumes:
+  postgres_data:

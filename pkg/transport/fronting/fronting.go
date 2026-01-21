@@ -50,53 +50,54 @@ func New(frontDomain, hiddenDomain string) *Transport {
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   5,
-		// Используем системные DNS с резервными серверами
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			// Пробуем несколько DNS серверов
-			dnsServers := []string{"", "8.8.8.8:53", "1.1.1.1:53", "9.9.9.9:53"}
+	}
+	httpTransport.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dnsServers := []string{"", "8.8.8.8:53", "1.1.1.1:53", "9.9.9.9:53"}
 
-			for _, dnsServer := range dnsServers {
-				var dialer net.Dialer
-				if dnsServer != "" {
-					dialer = net.Dialer{
-						Timeout:   5 * time.Second,
-						KeepAlive: 30 * time.Second,
-						Resolver: &net.Resolver{
-							PreferGo: true,
-							Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-								return net.Dial("udp", dnsServer)
-							},
+		for _, dnsServer := range dnsServers {
+			var dialer net.Dialer
+			if dnsServer != "" {
+				dialer = net.Dialer{
+					Timeout:   5 * time.Second,
+					KeepAlive: 30 * time.Second,
+					Resolver: &net.Resolver{
+						PreferGo: true,
+						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+							return net.Dial("udp", dnsServer)
 						},
-					}
-				} else {
-					dialer = net.Dialer{
-						Timeout:   5 * time.Second,
-						KeepAlive: 30 * time.Second,
-					}
+					},
 				}
-
-				// Сначала устанавливаем TCP соединение
-				tcpConn, err := dialer.DialContext(ctx, "tcp", addr)
-				if err != nil {
-					continue
+			} else {
+				dialer = net.Dialer{
+					Timeout:   5 * time.Second,
+					KeepAlive: 30 * time.Second,
 				}
-
-				// Затем оборачиваем в TLS
-				tlsConn := tls.Client(tcpConn, &tls.Config{
-					ServerName: frontDomain,
-				})
-
-				// Выполняем handshake
-				if err := tlsConn.HandshakeContext(ctx); err != nil {
-					tcpConn.Close()
-					continue
-				}
-
-				return tlsConn, nil
 			}
 
-			return nil, fmt.Errorf("all DNS servers failed for %s", addr)
-		},
+			tcpConn, err := dialer.DialContext(ctx, "tcp", addr)
+			if err != nil {
+				continue
+			}
+
+			tlsConfig := &tls.Config{}
+			if httpTransport.TLSClientConfig != nil {
+				tlsConfig = httpTransport.TLSClientConfig.Clone()
+			}
+			if tlsConfig.ServerName == "" {
+				tlsConfig.ServerName = frontDomain
+			}
+
+			tlsConn := tls.Client(tcpConn, tlsConfig)
+
+			if err := tlsConn.HandshakeContext(ctx); err != nil {
+				tcpConn.Close()
+				continue
+			}
+
+			return tlsConn, nil
+		}
+
+		return nil, fmt.Errorf("all DNS servers failed for %s", addr)
 	}
 
 	return &Transport{

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"hydra/internal/config"
 	"hydra/internal/server"
 	"hydra/pkg/storage"
 	"hydra/pkg/transport/manager"
@@ -12,28 +13,37 @@ import (
 func main() {
 	log.Println("Запуск Hydra Messenger...")
 
+	// Загрузка конфигурации
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Предупреждение: не удалось загрузить .env файл (%v), используются значения по умолчанию", err)
+	}
+
 	// Инициализируем менеджер транспортов с автоматическим переключением
 	log.Println("Инициализация менеджера транспортов...")
 
 	transportManager := manager.New()
 
 	// Инициализация хранилища
-	db, err := storage.New("hydra.db")
+	log.Printf("Подключение к БД: %s", cfg.DatabaseURL)
+	db, err := storage.New(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Ошибка инициализации хранилища: %v", err)
 	}
 
 	// Инициализация сервера
-	srv := server.New(transportManager, db)
+	srv := server.New(cfg, transportManager, db)
 
 	// Запускаем сервер в отдельной горутине
 	go func() {
-		if err := srv.Start(":8081"); err != nil {
+		addr := ":" + cfg.ServerPort
+		log.Printf("Запуск сервера на порту %s", addr)
+		if err := srv.Start(addr); err != nil {
 			log.Fatalf("Ошибка запуска сервера: %v", err)
 		}
 	}()
 
-	log.Println("Веб-интерфейс доступен по адресу: http://localhost:8081")
+	log.Printf("Веб-интерфейс доступен по адресу: http://localhost:%s", cfg.ServerPort)
 	log.Println("Для остановки нажмите Ctrl+C")
 
 	// Демонстрационная отправка сообщения (опционально)

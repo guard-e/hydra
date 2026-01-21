@@ -69,7 +69,7 @@ func (m *TransportManager) Name() string {
 func (m *TransportManager) Connect(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Пробуем подключиться к текущему или всем
 	for _, t := range m.transports {
 		if err := t.Connect(ctx); err != nil {
@@ -83,7 +83,7 @@ func (m *TransportManager) Connect(ctx context.Context) error {
 func (m *TransportManager) IsAvailable() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	for _, t := range m.transports {
 		if t.IsAvailable() {
 			return true

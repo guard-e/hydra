@@ -40,12 +40,15 @@ type CallAnswer struct {
 }
 
 // NewCallManager создает новый менеджер звонков
-func NewCallManager() *CallManager {
+func NewCallManager(iceServersURLs []string) *CallManager {
+	if len(iceServersURLs) == 0 {
+		iceServersURLs = []string{"stun:stun.l.google.com:19302"}
+	}
 	return &CallManager{
 		activeCalls: make(map[string]*CallSession),
 		iceServers: []webrtc.ICEServer{
 			{
-				URLs: []string{"stun:stun.l.google.com:19302"},
+				URLs: iceServersURLs,
 			},
 		},
 	}

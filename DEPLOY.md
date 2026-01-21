@@ -9,7 +9,29 @@
   - CPU: 1 Core
   - RAM: 1 GB (минимум), 2 GB (рекомендуется)
   - Disk: 10 GB+
+- **PostgreSQL 15+**
 - **Доменное имя** (опционально, но рекомендуется для HTTPS)
+
+---
+
+## Конфигурация
+
+Все настройки приложения вынесены в файл `.env`.
+Перед запуском (любым способом) создайте файл конфигурации:
+
+```bash
+cp .env.example .env
+```
+
+Отредактируйте файл `.env` в соответствии с вашими требованиями:
+
+- **DATABASE_URL**: Строка подключения к PostgreSQL.
+  - Для локального запуска: `postgres://postgres:postgres@localhost:5432/hydra?sslmode=disable`
+  - Для Docker: обычно `postgres://postgres:postgres@db:5432/hydra?sslmode=disable` (хост `db`)
+- **SERVER_PORT**: Порт сервера (по умолчанию 8081).
+- **SMTP_***: Настройки почты для отправки кодов подтверждения.
+- **ICE_SERVERS**: STUN/TURN серверы для звонков.
+- **Пути**: Пути к статике и хранилищу голоса.
 
 ---
 
@@ -70,7 +92,22 @@ sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.25.5.linux-amd64.ta
 export PATH=$PATH:/usr/local/go/bin
 ```
 
-### 2. Сборка
+### 2. Установка PostgreSQL
+
+```bash
+sudo apt install postgresql postgresql-contrib -y
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
+Настройка базы данных (пользователь `postgres`, пароль `postgres`, база `hydra`):
+
+```bash
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';"
+sudo -u postgres psql -c "CREATE DATABASE hydra;"
+```
+
+### 3. Сборка
 
 ```bash
 # В директории проекта
@@ -78,7 +115,7 @@ go mod download
 go build -o hydra-server cmd/hydra/main.go
 ```
 
-### 3. Настройка Systemd (автозапуск)
+### 4. Настройка Systemd (автозапуск)
 
 Создайте файл службы:
 
@@ -99,6 +136,9 @@ WorkingDirectory=/root/hydra
 ExecStart=/root/hydra/hydra-server
 Restart=always
 RestartSec=5
+# Если переменные окружения не подтягиваются из .env файла автоматически,
+# можно раскомментировать следующую строку (требует полного пути):
+# EnvironmentFile=/root/hydra/.env
 
 [Install]
 WantedBy=multi-user.target

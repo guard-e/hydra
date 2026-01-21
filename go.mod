@@ -3,10 +3,15 @@ module hydra
 go 1.25.5
 
 require (
+	github.com/hashicorp/mdns v1.0.6
+	github.com/joho/godotenv v1.5.1
+	github.com/lib/pq v1.10.9
+	github.com/pion/webrtc/v3 v3.3.6
+)
+
+require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.3.1 // indirect
-	github.com/hashicorp/mdns v1.0.6 // indirect
-	github.com/mattn/go-sqlite3 v1.14.33 // indirect
 	github.com/miekg/dns v1.1.55 // indirect
 	github.com/pion/datachannel v1.5.8 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
@@ -23,7 +28,6 @@ require (
 	github.com/pion/stun v0.6.1 // indirect
 	github.com/pion/transport/v2 v2.2.10 // indirect
 	github.com/pion/turn/v2 v2.1.6 // indirect
-	github.com/pion/webrtc/v3 v3.3.6 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/wlynxg/anet v0.0.3 // indirect

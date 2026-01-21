@@ -1,0 +1,23 @@
+# Go binaries
+*.exe
+*.dll
+hydra-server
+hydra.test
+
+# Data
+hydra.db
+voice_storage/
+
+# Node / React Native
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# System
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment
+.env
