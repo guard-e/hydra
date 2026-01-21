@@ -36,10 +36,10 @@ newgrp docker
 
 ### 2. Загрузка проекта
 
-Клонируйте репозиторий или скопируйте файлы на сервер:
+Клонируйте репозиторий:
 
 ```bash
-git clone https://github.com/your-repo/hydra.git
+git clone https://github.com/guard-e/hydra.git
 cd hydra
 ```
 
