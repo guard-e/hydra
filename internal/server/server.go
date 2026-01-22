@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"hydra/internal/config"
@@ -9,6 +11,7 @@ import (
 	"hydra/pkg/voice"
 	"hydra/pkg/webrtc"
 	"log"
+	"net"
 	"net/http"
 	"net/smtp"
 	"strings"
@@ -85,7 +88,67 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/api/auth/email", s.handleEmailAuth)
 
 	log.Printf("Web Interface started at http://localhost%s", addr)
+
+	// Проверяем SMTP соединение асинхронно при старте
+	if s.config.SMTPHost != "" {
+		go func() {
+			log.Println("Checking SMTP connection...")
+			if err := s.checkSMTPConnection(); err != nil {
+				log.Printf("❌ SMTP Connection Error: %v", err)
+				log.Println("Tip: Check your internet connection, firewall, or SMTP settings in .env")
+			} else {
+				log.Println("✅ SMTP Connection Established Successfully")
+			}
+		}()
+	}
+
 	return http.ListenAndServe(addr, nil)
+}
+
+func (s *Server) checkSMTPConnection() error {
+	addr := fmt.Sprintf("%s:%s", s.config.SMTPHost, s.config.SMTPPort)
+	timeout := 10 * time.Second
+
+	// Если порт 465, используем TLS
+	if s.config.SMTPPort == "465" {
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", addr, &tls.Config{
+			InsecureSkipVerify: false,
+			ServerName:         s.config.SMTPHost,
+		})
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+
+		client, err := smtp.NewClient(conn, s.config.SMTPHost)
+		if err != nil {
+			return err
+		}
+		defer client.Quit()
+
+		auth := smtp.PlainAuth("", s.config.SMTPUser, s.config.SMTPPassword, s.config.SMTPHost)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+		return nil
+	}
+
+	// Для остальных портов
+	client, err := smtp.Dial(addr)
+	if err != nil {
+		return err
+	}
+	defer client.Quit()
+
+	if err := client.StartTLS(&tls.Config{ServerName: s.config.SMTPHost}); err != nil {
+		return fmt.Errorf("StartTLS failed: %w", err)
+	}
+
+	auth := smtp.PlainAuth("", s.config.SMTPUser, s.config.SMTPPassword, s.config.SMTPHost)
+	if err := client.Auth(auth); err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -386,13 +449,66 @@ func (s *Server) handleSMSSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// В реальном приложении здесь должен быть вызов SMS-сервиса
-	log.Printf("SMS verification code for %s: %s", req.Phone, code)
+	// Отправляем SMS асинхронно
+	go func() {
+		msg := fmt.Sprintf("Your Hydra verification code is: %s", code)
+		if err := s.sendSMS(req.Phone, msg); err != nil {
+			log.Printf("❌ Failed to send SMS to %s: %v", req.Phone, err)
+		} else {
+			log.Printf("✅ SMS sent to %s via %s", req.Phone, s.config.SMSProvider)
+		}
+	}()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Verification code sent",
 	})
+}
+
+func (s *Server) sendSMS(to, message string) error {
+	// 1. Console Provider (Default)
+	if s.config.SMSProvider == "console" || s.config.SMSProvider == "" {
+		log.Printf("[SMS-CONSOLE] To: %s | Message: %s", to, message)
+		return nil
+	}
+
+	// 2. HTTP Provider (Generic)
+	if s.config.SMSProvider == "http" {
+		if s.config.SMSAPIURL == "" {
+			return fmt.Errorf("SMS_API_URL is not configured")
+		}
+
+		payload := map[string]string{
+			"to":      to,
+			"message": message,
+			"key":     s.config.SMSAPIKey,
+		}
+
+		jsonBody, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal SMS payload: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", s.config.SMSAPIURL, bytes.NewBuffer(jsonBody))
+		if err != nil {
+			return fmt.Errorf("failed to create SMS request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send SMS request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 300 {
+			return fmt.Errorf("SMS API returned status: %d", resp.StatusCode)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("unknown SMS provider: %s", s.config.SMSProvider)
 }
 
 func (s *Server) handleSMSVerify(w http.ResponseWriter, r *http.Request) {
@@ -479,14 +595,89 @@ func (s *Server) handleEmailSend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendEmail(to, subject, body string) error {
-	auth := smtp.PlainAuth("", s.config.SMTPUser, s.config.SMTPPassword, s.config.SMTPHost)
-	msg := []byte(fmt.Sprintf("To: %s\r\n"+
-		"Subject: %s\r\n"+
-		"\r\n"+
-		"%s\r\n", to, subject, body))
-
 	addr := fmt.Sprintf("%s:%s", s.config.SMTPHost, s.config.SMTPPort)
-	return smtp.SendMail(addr, auth, s.config.SMTPFrom, []string{to}, msg)
+	
+	// Формируем заголовки письма
+	// Важно: Mail.ru и другие провайдеры требуют правильных заголовков From и Content-Type
+	header := make(map[string]string)
+	header["From"] = s.config.SMTPFrom
+	header["To"] = to
+	header["Subject"] = subject
+	header["MIME-Version"] = "1.0"
+	header["Content-Type"] = "text/plain; charset=\"utf-8\""
+
+	message := ""
+	for k, v := range header {
+		message += fmt.Sprintf("%s: %s\r\n", k, v)
+	}
+	message += "\r\n" + body
+
+	msg := []byte(message)
+	
+	// Получаем чистый email отправителя для команды MAIL FROM
+	// Если SMTPFrom в формате "Name <email>", нужно извлечь email
+	senderEmail := s.config.SMTPFrom
+	if start := strings.LastIndex(s.config.SMTPFrom, "<"); start != -1 {
+		if end := strings.LastIndex(s.config.SMTPFrom, ">"); end != -1 && end > start {
+			senderEmail = s.config.SMTPFrom[start+1 : end]
+		}
+	}
+
+	log.Printf("📧 Sending email from %s (auth: %s) to %s...", senderEmail, s.config.SMTPUser, to)
+
+	// Если порт 465, используем неявный SSL/TLS (Implicit SSL)
+	if s.config.SMTPPort == "465" {
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: false,
+			ServerName:         s.config.SMTPHost,
+		}
+
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("failed to dial TLS: %w", err)
+		}
+		defer conn.Close()
+
+		client, err := smtp.NewClient(conn, s.config.SMTPHost)
+		if err != nil {
+			return fmt.Errorf("failed to create SMTP client: %w", err)
+		}
+		defer client.Quit()
+
+		auth := smtp.PlainAuth("", s.config.SMTPUser, s.config.SMTPPassword, s.config.SMTPHost)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("failed to authenticate: %w", err)
+		}
+
+		if err := client.Mail(senderEmail); err != nil {
+			return fmt.Errorf("failed to set sender (MAIL FROM): %w", err)
+		}
+		if err := client.Rcpt(to); err != nil {
+			return fmt.Errorf("failed to set recipient (RCPT TO): %w", err)
+		}
+		w, err := client.Data()
+		if err != nil {
+			return fmt.Errorf("failed to create data writer: %w", err)
+		}
+		_, err = w.Write(msg)
+		if err != nil {
+			return fmt.Errorf("failed to write message: %w", err)
+		}
+		if err := w.Close(); err != nil {
+			return fmt.Errorf("failed to close writer: %w", err)
+		}
+		log.Printf("✅ Email sent successfully to %s", to)
+		return nil
+	}
+
+	// Для остальных портов (587, 25) используем стандартный sendMail (STARTTLS)
+	auth := smtp.PlainAuth("", s.config.SMTPUser, s.config.SMTPPassword, s.config.SMTPHost)
+	err := smtp.SendMail(addr, auth, senderEmail, []string{to}, msg)
+	if err != nil {
+		return fmt.Errorf("smtp.SendMail failed: %w", err)
+	}
+	log.Printf("✅ Email sent successfully to %s", to)
+	return nil
 }
 
 func (s *Server) handleEmailVerify(w http.ResponseWriter, r *http.Request) {

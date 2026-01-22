@@ -30,6 +30,12 @@ cp .env.example .env
   - Для Docker: обычно `postgres://postgres:postgres@db:5432/hydra?sslmode=disable` (хост `db`)
 - **SERVER_PORT**: Порт сервера (по умолчанию 8081).
 - **SMTP_***: Настройки почты для отправки кодов подтверждения.
+  - **Важно для Mail.ru/Yandex/Gmail**: Используйте "Пароль приложений" (App Password), а не основной пароль от аккаунта.
+  - Для Mail.ru: `SMTP_HOST=smtp.mail.ru`, `SMTP_PORT=465` (SSL/TLS).
+- **SMS_***: Настройки для отправки SMS (опционально).
+  - `SMS_PROVIDER`: `console` (для тестов, вывод в лог) или `http` (для внешнего API).
+  - `SMS_API_URL`: URL API для отправки (только для `http`).
+  - `SMS_API_KEY`: API ключ (только для `http`).
 - **ICE_SERVERS**: STUN/TURN серверы для звонков.
 - **Пути**: Пути к статике и хранилищу голоса.
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -26,6 +27,7 @@ type Config struct {
 
 	// SMS Configuration (Placeholder for future)
 	SMSProvider string
+	SMSAPIURL   string
 	SMSAPIKey   string
 }
 
@@ -38,12 +40,14 @@ func Load() (*Config, error) {
 		ServerPort:       getEnv("SERVER_PORT", "8081"),
 		VoiceStoragePath: getEnv("VOICE_STORAGE_PATH", "./voice_storage"),
 		WebStaticPath:    getEnv("WEB_STATIC_PATH", "./web"),
+		ICEServers:       strings.Split(getEnv("ICE_SERVERS", "stun:stun.l.google.com:19302"), ","),
 		SMTPHost:         getEnv("SMTP_HOST", "smtp.example.com"),
 		SMTPPort:         getEnv("SMTP_PORT", "587"),
 		SMTPUser:         getEnv("SMTP_USER", ""),
 		SMTPPassword:     getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:         getEnv("SMTP_FROM", "noreply@example.com"),
-		SMSProvider:      getEnv("SMS_PROVIDER", "console"), // "console" means log to stdout
+		SMSProvider:      getEnv("SMS_PROVIDER", "console"), // "console" means log to stdout, "http" means use external API
+		SMSAPIURL:        getEnv("SMS_API_URL", ""),
 		SMSAPIKey:        getEnv("SMS_API_KEY", ""),
 	}
 
